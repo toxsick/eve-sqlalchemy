@@ -12,8 +12,10 @@ import re
 import ast
 import operator as sqla_op
 import json
+import itertools
 
 from eve.utils import str_to_date
+import sqlalchemy
 from sqlalchemy.ext.associationproxy import AssociationProxy
 from sqlalchemy.sql import expression as sqla_exp
 
@@ -46,6 +48,18 @@ def parse_dictionary(filter_dict, model):
         else:
             continue
 
+        if k in ['and_', 'or_']:
+            try:
+                if not isinstance(v, list):
+                    v = json.loads(v)
+            except TypeError:
+                pass
+            _conditions = list(itertools.chain.from_iterable(
+                [parse_dictionary(sv, model) for sv in v]))
+            new_filter = getattr(sqlalchemy, k)(*_conditions)
+            conditions.append(new_filter)
+            continue
+
         attr = getattr(model, k)
 
         if isinstance(attr, AssociationProxy):
@@ -59,9 +73,14 @@ def parse_dictionary(filter_dict, model):
         else:
             try:
                 new_o, v = parse_sqla_operators(v)
-                new_filter = getattr(attr, new_o)(v)
+                try:
+                    new_filter = getattr(attr, new_o)(v)
+                except TypeError:
+                    new_filter = getattr(attr, new_o)(*v)
             except (TypeError, ValueError):  # json/sql parse error
-                if isinstance(v, list):  # we have an array
+                # we default to in_ if we have
+                # an array and no operator
+                if isinstance(v, list):
                     new_filter = attr.in_(v)
                 else:
                     new_filter = sqla_op.eq(attr, v)
@@ -70,12 +89,16 @@ def parse_dictionary(filter_dict, model):
     return conditions
 
 
+operators = set(['like', 'ilike', 'in_', 'between'])
+
+
 def parse_sqla_operators(expression):
     """
     Parse expressions like:
-        like('%john%')
-        ilike('john%')
-        in_(['a','b'])
+        like("%john%")
+        ilike("john%")
+        in_(["a","b"])
+        between([1, 100])
     """
     m = re.match(r"(?P<operator>\w+)\((?P<value>.+)\)", expression)
     if m:

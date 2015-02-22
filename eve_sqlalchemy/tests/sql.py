@@ -152,6 +152,17 @@ class TestSQLParser(TestCase):
         self.assertEqual(str(r[0]),
                          'people.firstname IN (:firstname_1, :firstname_2)')
 
+        r = parse_dictionary({'prog': 'between([1,2])'}, self.model)
+        self.assertEqual(str(r[0]), 'people.prog BETWEEN :prog_1 AND :prog_2')
+
+        r = parse_dictionary(
+            {'or_': '[{"firstname": "john"}, {"and_": ['
+             '{"firstname": "dylan"},{"lastname": "smith"}]}]'}, self.model)
+        self.assertEqual(str(r[0]),
+                         'people.firstname = :firstname_1 OR '
+                         'people.firstname = :firstname_2 AND '
+                         'people.lastname = :lastname_1')
+
 
 class TestSQLStructures(TestCase):
 
